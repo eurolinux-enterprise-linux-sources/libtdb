@@ -1,6 +1,6 @@
 Name: libtdb
 Version: 1.2.1
-Release: 2%{?dist}
+Release: 3%{?dist}
 Group: System Environment/Daemons
 Summary: The tdb library
 License: LGPLv3+
@@ -11,6 +11,8 @@ BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 BuildRequires: autoconf
 BuildRequires: libxslt
 BuildRequires: docbook-style-xsl
+
+Patch0001: tdb-1.2.9-limit-tdb_expand.patch
 
 %description
 A library that implements a trivial database.
@@ -34,6 +36,8 @@ Tools to manage Tdb files
 
 %prep
 %setup -q -n tdb-%{version}
+
+%patch0001 -p1
 
 %build
 ./autogen.sh
@@ -81,6 +85,10 @@ rm -rf $RPM_BUILD_ROOT
 %postun -p /sbin/ldconfig
 
 %changelog
+* Tue Apr 05 2011 Stephen Gallagher <sgallagh@redhat.com> - 1.2.1-3
+- Resolves: rhbz#692251 - tdb_extend() can cause a memory-usage explosion if
+-                         the size of its entries are very large
+
 * Thu Feb 25 2010 Stephen Gallagher <sgallagh@redhat.com> - 1.2.1-2
 - Remove unnecessary --prefix argument to configure
 
