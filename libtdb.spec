@@ -6,7 +6,7 @@
 
 Name: libtdb
 Version: 1.3.8
-Release: 1%{?dist}
+Release: 3%{?dist}.2
 Group: System Environment/Daemons
 Summary: The tdb library
 License: LGPLv3+
@@ -73,7 +73,6 @@ rm -rf $RPM_BUILD_ROOT
 %files
 %defattr(-,root,root,-)
 %{_libdir}/libtdb.so.*
-%{python_sitearch}/_tdb_text.py*
 
 %files devel
 %defattr(-,root,root)
@@ -97,6 +96,7 @@ rm -rf $RPM_BUILD_ROOT
 %files -n python-tdb
 %defattr(-,root,root,-)
 %{python_sitearch}/tdb.so
+%{python_sitearch}/_tdb_text.py*
 
 %post -p /sbin/ldconfig
 
@@ -107,9 +107,13 @@ rm -rf $RPM_BUILD_ROOT
 %postun -n python-tdb -p /sbin/ldconfig
 
 %changelog
+* Thu Apr 21 2016 Jakub Hrozek <jhrozek@redhat.com> - 1.3.8-3.2
+- Move _tdb_text.py to python-tdb subpackage
+- Resolves: rhbz#1329664 - tdb mispackaged tdb_text.py file
+
 * Fri Apr  1 2016 Jakub Hrozek <jhrozek@redhat.com> - 1.3.8-1
 - Rebase libtdb to 1.3.8
-- related: #1322688
+- related: #1322689
 
 * Thu Aug 02 2012 Jakub Hrozek <jhrozek@redhat.com> - 1.2.10-1
 - Resolves: rhbz#766334 - Rebase libtdb to match the version required
