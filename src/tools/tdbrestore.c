@@ -17,15 +17,13 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <assert.h>
 #include "replace.h"
+#include <assert.h>
 #include "system/locale.h"
 #include "system/time.h"
 #include "system/filesys.h"
 #include "system/wait.h"
 #include "tdb.h"
-
-#define debug_fprintf(file, fmt, ...) do {/*nothing*/} while (0)
 
 static int read_linehead(FILE *f)
 {

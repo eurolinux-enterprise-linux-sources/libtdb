@@ -10,12 +10,11 @@
 
 "Execute the tasks"
 
-import sys, random, time, threading, traceback, os
+import sys, random, threading
 try: from Queue import Queue
 except ImportError: from queue import Queue
-import Build, Utils, Logs, Options
-from Logs import debug, error
-from Constants import *
+import Utils, Options
+from Constants import EXCEPTION, CRASHED, MAXJOBS, ASK_LATER, SKIPPED, SKIP_ME, SUCCESS
 
 GAP = 15
 
@@ -132,8 +131,10 @@ class Parallel(object):
                 self.frozen = []
             elif not self.count:
                 (jobs, tmp) = self.manager.get_next_set()
-                if jobs != None: self.maxjobs = jobs
-                if tmp: self.outstanding += tmp
+                if jobs is not None:
+                    self.maxjobs = jobs
+                if tmp:
+                    self.outstanding += tmp
                 break
 
     def get_out(self):

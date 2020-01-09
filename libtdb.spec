@@ -5,7 +5,7 @@
 %{!?python_version: %global python_version %(%{__python} -c "from distutils.sysconfig import get_python_version; print(get_python_version())")}
 
 Name: libtdb
-Version: 1.2.10
+Version: 1.3.8
 Release: 1%{?dist}
 Group: System Environment/Daemons
 Summary: The tdb library
@@ -73,6 +73,7 @@ rm -rf $RPM_BUILD_ROOT
 %files
 %defattr(-,root,root,-)
 %{_libdir}/libtdb.so.*
+%{python_sitearch}/_tdb_text.py*
 
 %files devel
 %defattr(-,root,root)
@@ -106,6 +107,10 @@ rm -rf $RPM_BUILD_ROOT
 %postun -n python-tdb -p /sbin/ldconfig
 
 %changelog
+* Fri Apr  1 2016 Jakub Hrozek <jhrozek@redhat.com> - 1.3.8-1
+- Rebase libtdb to 1.3.8
+- related: #1322688
+
 * Thu Aug 02 2012 Jakub Hrozek <jhrozek@redhat.com> - 1.2.10-1
 - Resolves: rhbz#766334 - Rebase libtdb to match the version required
                           by Samba4

@@ -1,9 +1,74 @@
 # a set of config tests that use the samba_autoconf functions
 # to test for commonly needed configuration options
 
-import os, Build, shutil, Utils, re
+import os, shutil, re
+import Build, Configure, Utils, Options, Logs
 from Configure import conf
-from samba_utils import *
+from samba_utils import TO_LIST, ADD_LD_LIBRARY_PATH
+
+
+def add_option(self, *k, **kw):
+    '''syntax help: provide the "match" attribute to opt.add_option() so that folders can be added to specific config tests'''
+    match = kw.get('match', [])
+    if match:
+        del kw['match']
+    opt = self.parser.add_option(*k, **kw)
+    opt.match = match
+    return opt
+Options.Handler.add_option = add_option
+
+@conf
+def check(self, *k, **kw):
+    '''Override the waf defaults to inject --with-directory options'''
+
+    if not 'env' in kw:
+        kw['env'] = self.env.copy()
+
+    # match the configuration test with speficic options, for example:
+    # --with-libiconv -> Options.options.iconv_open -> "Checking for library iconv"
+    additional_dirs = []
+    if 'msg' in kw:
+        msg = kw['msg']
+        for x in Options.Handler.parser.parser.option_list:
+             if getattr(x, 'match', None) and msg in x.match:
+                 d = getattr(Options.options, x.dest, '')
+                 if d:
+                     additional_dirs.append(d)
+
+    # we add the additional dirs twice: once for the test data, and again if the compilation test suceeds below
+    def add_options_dir(dirs, env):
+        for x in dirs:
+             if not x in env.CPPPATH:
+                 env.CPPPATH = [os.path.join(x, 'include')] + env.CPPPATH
+             if not x in env.LIBPATH:
+                 env.LIBPATH = [os.path.join(x, 'lib')] + env.LIBPATH
+
+    add_options_dir(additional_dirs, kw['env'])
+
+    self.validate_c(kw)
+    self.check_message_1(kw['msg'])
+    ret = None
+    try:
+        ret = self.run_c_code(*k, **kw)
+    except Configure.ConfigurationError, e:
+        self.check_message_2(kw['errmsg'], 'YELLOW')
+        if 'mandatory' in kw and kw['mandatory']:
+            if Logs.verbose > 1:
+                raise
+            else:
+                self.fatal('the configuration failed (see %r)' % self.log.name)
+    else:
+        kw['success'] = ret
+        self.check_message_2(self.ret_msg(kw['okmsg'], kw))
+
+        # success! keep the CPPPATH/LIBPATH
+        add_options_dir(additional_dirs, self.env)
+
+    self.post_check(*k, **kw)
+    if not kw.get('execute', False):
+        return ret == 0
+    return ret
+
 
 @conf
 def CHECK_ICONV(conf, define='HAVE_NATIVE_ICONV'):
@@ -18,17 +83,43 @@ def CHECK_ICONV(conf, define='HAVE_NATIVE_ICONV'):
 @conf
 def CHECK_LARGEFILE(conf, define='HAVE_LARGEFILE'):
     '''see what we need for largefile support'''
+    getconf_cflags = conf.CHECK_COMMAND(['getconf', 'LFS_CFLAGS']);
+    if getconf_cflags is not False:
+        if (conf.CHECK_CODE('return !(sizeof(off_t) >= 8)',
+                            define='WORKING_GETCONF_LFS_CFLAGS',
+                            execute=True,
+                            cflags=getconf_cflags,
+                            msg='Checking getconf large file support flags work')):
+            conf.ADD_CFLAGS(getconf_cflags)
+            getconf_cflags_list=TO_LIST(getconf_cflags)
+            for flag in getconf_cflags_list:
+                if flag[:2] == "-D":
+                    flag_split = flag[2:].split('=')
+                    if len(flag_split) == 1:
+                        conf.DEFINE(flag_split[0], '1')
+                    else:
+                        conf.DEFINE(flag_split[0], flag_split[1])
+
     if conf.CHECK_CODE('return !(sizeof(off_t) >= 8)',
                        define,
                        execute=True,
-                       msg='Checking for large file support'):
+                       msg='Checking for large file support without additional flags'):
         return True
+
     if conf.CHECK_CODE('return !(sizeof(off_t) >= 8)',
                        define,
                        execute=True,
                        cflags='-D_FILE_OFFSET_BITS=64',
                        msg='Checking for -D_FILE_OFFSET_BITS=64'):
         conf.DEFINE('_FILE_OFFSET_BITS', 64)
+        return True
+
+    if conf.CHECK_CODE('return !(sizeof(off_t) >= 8)',
+                       define,
+                       execute=True,
+                       cflags='-D_LARGE_FILES',
+                       msg='Checking for -D_LARGE_FILES'):
+        conf.DEFINE('_LARGE_FILES', 1)
         return True
     return False
 
@@ -105,7 +196,7 @@ int foo(int v) {
     return v * 2;
 }
 '''
-    return conf.check(features='cc cshlib',vnum="1",fragment=snip,msg=msg)
+    return conf.check(features='c cshlib',vnum="1",fragment=snip,msg=msg)
 
 @conf
 def CHECK_NEED_LC(conf, msg):
@@ -124,9 +215,7 @@ def CHECK_NEED_LC(conf, msg):
 
     os.makedirs(subdir)
 
-    dest = open(os.path.join(subdir, 'liblc1.c'), 'w')
-    dest.write('#include <stdio.h>\nint lib_func(void) { FILE *f = fopen("foo", "r");}\n')
-    dest.close()
+    Utils.writef(os.path.join(subdir, 'liblc1.c'), '#include <stdio.h>\nint lib_func(void) { FILE *f = fopen("foo", "r");}\n')
 
     bld = Build.BuildContext()
     bld.log = conf.log
@@ -137,7 +226,7 @@ def CHECK_NEED_LC(conf, msg):
 
     bld.rescan(bld.srcnode)
 
-    bld(features='cc cshlib',
+    bld(features='c cshlib',
         source='liblctest/liblc1.c',
         ldflags=conf.env['EXTRA_LDFLAGS'],
         target='liblc',
@@ -157,9 +246,6 @@ def CHECK_SHLIB_W_PYTHON(conf, msg):
     '''check if we need -undefined dynamic_lookup'''
 
     dir = find_config_dir(conf)
-
-    env = conf.env
-
     snip = '''
 #include <Python.h>
 #include <crt_externs.h>
@@ -172,7 +258,7 @@ int foo(int v) {
     ldb_module = PyImport_ImportModule("ldb");
     return v * 2;
 }'''
-    return conf.check(features='cc cshlib',uselib='PYEMBED',fragment=snip,msg=msg)
+    return conf.check(features='c cshlib',uselib='PYEMBED',fragment=snip,msg=msg)
 
 # this one is quite complex, and should probably be broken up
 # into several parts. I'd quite like to create a set of CHECK_COMPOUND()
@@ -199,13 +285,8 @@ def CHECK_LIBRARY_SUPPORT(conf, rpath=False, version_script=False, msg=None):
 
     os.makedirs(subdir)
 
-    dest = open(os.path.join(subdir, 'lib1.c'), 'w')
-    dest.write('int lib_func(void) { return 42; }\n')
-    dest.close()
-
-    dest = open(os.path.join(dir, 'main.c'), 'w')
-    dest.write('int main(void) {return !(lib_func() == 42);}\n')
-    dest.close()
+    Utils.writef(os.path.join(subdir, 'lib1.c'), 'int lib_func(void) { return 42; }\n')
+    Utils.writef(os.path.join(dir, 'main.c'), 'int main(void) {return !(lib_func() == 42);}\n')
 
     bld = Build.BuildContext()
     bld.log = conf.log
@@ -219,17 +300,15 @@ def CHECK_LIBRARY_SUPPORT(conf, rpath=False, version_script=False, msg=None):
     ldflags = []
     if version_script:
         ldflags.append("-Wl,--version-script=%s/vscript" % bld.path.abspath())
-        dest = open(os.path.join(dir,'vscript'), 'w')
-        dest.write('TEST_1.0A2 { global: *; };\n')
-        dest.close()
+        Utils.writef(os.path.join(dir,'vscript'), 'TEST_1.0A2 { global: *; };\n')
 
-    bld(features='cc cshlib',
+    bld(features='c cshlib',
         source='libdir/lib1.c',
         target='libdir/lib1',
         ldflags=ldflags,
         name='lib1')
 
-    o = bld(features='cc cprogram',
+    o = bld(features='c cprogram',
             source='main.c',
             target='prog1',
             uselib_local='lib1')
@@ -291,15 +370,13 @@ def CHECK_PERL_MANPAGE(conf, msg=None, section=None):
     if not os.path.exists(bdir):
         os.makedirs(bdir)
 
-    dest = open(os.path.join(bdir, 'Makefile.PL'), 'w')
-    dest.write("""
+    Utils.writef(os.path.join(bdir, 'Makefile.PL'), """
 use ExtUtils::MakeMaker;
 WriteMakefile(
     'NAME'    => 'WafTest',
     'EXE_FILES' => [ 'WafTest' ]
 );
 """)
-    dest.close()
     back = os.path.abspath('.')
     os.chdir(bdir)
     proc = Utils.pproc.Popen(['perl', 'Makefile.PL'],
@@ -314,9 +391,7 @@ WriteMakefile(
         return
 
     if section:
-        f = open(os.path.join(bdir,'Makefile'), 'r')
-        man = f.read()
-        f.close()
+        man = Utils.readf(os.path.join(bdir,'Makefile'))
         m = re.search('MAN%sEXT\s+=\s+(\w+)' % section, man)
         if not m:
             conf.check_message_2('not found', color='YELLOW')
@@ -412,3 +487,36 @@ def CHECK_XSLTPROC_MANPAGES(conf):
                              msg='Checking for stylesheet %s' % s,
                              define='XSLTPROC_MANPAGES', on_target=False,
                              boolean=True)
+    if not conf.CONFIG_SET('XSLTPROC_MANPAGES'):
+        print "A local copy of the docbook.xsl wasn't found on your system" \
+              " consider installing package like docbook-xsl"
+
+#
+# Determine the standard libpath for the used compiler,
+# so we can later use that to filter out these standard
+# library paths when some tools like cups-config or
+# python-config report standard lib paths with their
+# ldflags (-L...)
+#
+@conf
+def CHECK_STANDARD_LIBPATH(conf):
+    # at least gcc and clang support this:
+    try:
+        cmd = conf.env.CC + ['-print-search-dirs']
+        out = Utils.cmd_output(cmd).split('\n')
+    except ValueError:
+        # option not supported by compiler - use a standard list of directories
+        dirlist = [ '/usr/lib', '/usr/lib64' ]
+    except:
+        raise Utils.WafError('Unexpected error running "%s"' % (cmd))
+    else:
+        dirlist = []
+        for line in out:
+            line = line.strip()
+            if line.startswith("libraries: ="):
+                dirliststr = line[len("libraries: ="):]
+                dirlist = [ os.path.normpath(x) for x in dirliststr.split(':') ]
+                break
+
+    conf.env.STANDARD_LIBPATH = dirlist
+

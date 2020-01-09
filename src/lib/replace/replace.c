@@ -64,14 +64,22 @@ int rep_ftruncate(int f, off_t l)
 
 
 #ifndef HAVE_STRLCPY
-/* like strncpy but does not 0 fill the buffer and always null 
-   terminates. bufsize is the size of the destination buffer */
+/*
+ * Like strncpy but does not 0 fill the buffer and always null
+ * terminates. bufsize is the size of the destination buffer.
+ * Returns the length of s.
+ */
 size_t rep_strlcpy(char *d, const char *s, size_t bufsize)
 {
 	size_t len = strlen(s);
 	size_t ret = len;
-	if (bufsize <= 0) return 0;
-	if (len >= bufsize) len = bufsize-1;
+
+	if (bufsize <= 0) {
+		return 0;
+	}
+	if (len >= bufsize) {
+		len = bufsize - 1;
+	}
 	memcpy(d, s, len);
 	d[len] = 0;
 	return ret;
@@ -84,7 +92,7 @@ size_t rep_strlcpy(char *d, const char *s, size_t bufsize)
    be one more than the maximum resulting string length */
 size_t rep_strlcat(char *d, const char *s, size_t bufsize)
 {
-	size_t len1 = strlen(d);
+	size_t len1 = strnlen(d, bufsize);
 	size_t len2 = strlen(s);
 	size_t ret = len1 + len2;
 
@@ -212,16 +220,6 @@ int rep_initgroups(char *name, gid_t id)
 #endif /* HAVE_SETGROUPS */
 }
 #endif /* HAVE_INITGROUPS */
-
-
-#if (defined(SecureWare) && defined(SCO))
-/* This is needed due to needing the nap() function but we don't want
-   to include the Xenix libraries since that will break other things...
-   BTW: system call # 0x0c28 is the same as calling nap() */
-long nap(long milliseconds) {
-	 return syscall(0x0c28, milliseconds);
- }
-#endif
 
 
 #ifndef HAVE_MEMMOVE
@@ -412,10 +410,10 @@ int rep_mkstemp(char *template)
 {
 	/* have a reasonable go at emulating it. Hope that
 	   the system mktemp() isn't completely hopeless */
-	char *p = mktemp(template);
-	if (!p)
+	mktemp(template);
+	if (template[0] == 0)
 		return -1;
-	return open(p, O_CREAT|O_EXCL|O_RDWR, 0600);
+	return open(template, O_CREAT|O_EXCL|O_RDWR, 0600);
 }
 #endif
 
@@ -477,6 +475,26 @@ char *rep_strcasestr(const char *haystack, const char *needle)
 }
 #endif
 
+#ifndef HAVE_STRSEP
+char *rep_strsep(char **pps, const char *delim)
+{
+	char *ret = *pps;
+	char *p = *pps;
+
+	if (p == NULL) {
+		return NULL;
+	}
+	p += strcspn(p, delim);
+	if (*p == '\0') {
+		*pps = NULL;
+	} else {
+		*p = '\0';
+		*pps = p + 1;
+	}
+	return ret;
+}
+#endif
+
 #ifndef HAVE_STRTOK_R
 /* based on GLIBC version, copyright Free Software Foundation */
 char *rep_strtok_r(char *s, const char *delim, char **save_ptr)
@@ -520,25 +538,23 @@ long long int rep_strtoll(const char *str, char **endptr, int base)
 }
 #else
 #ifdef HAVE_BSD_STRTOLL
-#ifdef HAVE_STRTOQ
+#undef strtoll
 long long int rep_strtoll(const char *str, char **endptr, int base)
 {
-	long long int nb = strtoq(str, endptr, base);
-	/* In linux EINVAL is only returned if base is not ok */
+	int saved_errno = errno;
+	long long int nb = strtoll(str, endptr, base);
+	/* With glibc EINVAL is only returned if base is not ok */
 	if (errno == EINVAL) {
 		if (base == 0 || (base >1 && base <37)) {
 			/* Base was ok so it's because we were not
 			 * able to make the convertion.
 			 * Let's reset errno.
 			 */
-			errno = 0;
+			errno = saved_errno;
 		}
 	}
 	return nb;
 }
-#else
-#error "You need the strtoq function"
-#endif /* HAVE_STRTOQ */
 #endif /* HAVE_BSD_STRTOLL */
 #endif /* HAVE_STRTOLL */
 
@@ -558,25 +574,23 @@ unsigned long long int rep_strtoull(const char *str, char **endptr, int base)
 }
 #else
 #ifdef HAVE_BSD_STRTOLL
-#ifdef HAVE_STRTOUQ
+#undef strtoull
 unsigned long long int rep_strtoull(const char *str, char **endptr, int base)
 {
-	unsigned long long int nb = strtouq(str, endptr, base);
-	/* In linux EINVAL is only returned if base is not ok */
+	int saved_errno = errno;
+	unsigned long long int nb = strtoull(str, endptr, base);
+	/* With glibc EINVAL is only returned if base is not ok */
 	if (errno == EINVAL) {
 		if (base == 0 || (base >1 && base <37)) {
 			/* Base was ok so it's because we were not
 			 * able to make the convertion.
 			 * Let's reset errno.
 			 */
-			errno = 0;
+			errno = saved_errno;
 		}
 	}
 	return nb;
 }
-#else
-#error "You need the strtouq function"
-#endif /* HAVE_STRTOUQ */
 #endif /* HAVE_BSD_STRTOLL */
 #endif /* HAVE_STRTOULL */
 
@@ -751,7 +765,7 @@ void *rep_memmem(const void *haystack, size_t haystacklen,
 }
 #endif
 
-#ifndef HAVE_VDPRINTF
+#if !defined(HAVE_VDPRINTF) || !defined(HAVE_C99_VSNPRINTF)
 int rep_vdprintf(int fd, const char *format, va_list ap)
 {
 	char *s = NULL;
@@ -768,7 +782,7 @@ int rep_vdprintf(int fd, const char *format, va_list ap)
 }
 #endif
 
-#ifndef HAVE_DPRINTF
+#if !defined(HAVE_DPRINTF) || !defined(HAVE_C99_VSNPRINTF)
 int rep_dprintf(int fd, const char *format, ...)
 {
 	int ret;
@@ -795,7 +809,7 @@ char *rep_get_current_dir_name(void)
 }
 #endif
 
-#if !defined(HAVE_STRERROR_R) || !defined(STRERROR_R_PROTO_COMPATIBLE)
+#ifndef HAVE_STRERROR_R
 int rep_strerror_r(int errnum, char *buf, size_t buflen)
 {
 	char *s = strerror(errnum);
@@ -814,7 +828,7 @@ int rep_clock_gettime(clockid_t clk_id, struct timespec *tp)
 	struct timeval tval;
 	switch (clk_id) {
 		case 0: /* CLOCK_REALTIME :*/
-#ifdef HAVE_GETTIMEOFDAY_TZ
+#if defined(HAVE_GETTIMEOFDAY_TZ) || defined(HAVE_GETTIMEOFDAY_TZ_VOID)
 			gettimeofday(&tval,NULL);
 #else
 			gettimeofday(&tval);
@@ -904,3 +918,9 @@ int rep_usleep(useconds_t sec)
 	return 0;
 }
 #endif /* HAVE_USLEEP */
+
+#ifndef HAVE_SETPROCTITLE
+void rep_setproctitle(const char *fmt, ...)
+{
+}
+#endif

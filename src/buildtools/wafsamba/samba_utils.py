@@ -1,11 +1,11 @@
 # a waf tool to add autoconf-like macros to the configure section
 # and for SAMBA_ macros for building libraries, binaries etc
 
-import Build, os, sys, Options, Utils, Task, re, fnmatch, Logs
+import os, sys, re, fnmatch, shlex
+import Build, Options, Utils, Task, Logs, Configure
 from TaskGen import feature, before
-from Configure import conf
+from Configure import conf, ConfigurationContext
 from Logs import debug
-import shlex
 
 # TODO: make this a --option
 LIB_PATH="shared"
@@ -39,8 +39,8 @@ def GET_TARGET_TYPE(ctx, target):
 # this is used as a decorator to make functions only
 # run once. Based on the idea from
 # http://stackoverflow.com/questions/815110/is-there-a-decorator-to-simply-cache-function-return-values
-runonce_ret = {}
 def runonce(function):
+    runonce_ret = {}
     def runonce_wrapper(*args):
         if args in runonce_ret:
             return runonce_ret[args]
@@ -66,7 +66,7 @@ def ADD_LD_LIBRARY_PATH(path):
 def needs_private_lib(bld, target):
     '''return True if a target links to a private library'''
     for lib in getattr(target, "final_libs", []):
-        t = bld.name_to_obj(lib, bld.env)
+        t = bld.get_tgen_by_name(lib)
         if t and getattr(t, 'private_library', False):
             return True
     return False
@@ -140,7 +140,6 @@ def exec_command(self, cmd, **kw):
     '''this overrides the 'waf -v' debug output to be in a nice
     unix like format instead of a python list.
     Thanks to ita on #waf for this'''
-    import Utils, Logs
     _cmd = cmd
     if isinstance(cmd, list):
         _cmd = ' '.join(cmd)
@@ -164,7 +163,7 @@ def ADD_COMMAND(opt, name, function):
 Options.Handler.ADD_COMMAND = ADD_COMMAND
 
 
-@feature('cc', 'cshlib', 'cprogram')
+@feature('c', 'cc', 'cshlib', 'cprogram')
 @before('apply_core','exec_rule')
 def process_depends_on(self):
     '''The new depends_on attribute for build rules
@@ -173,7 +172,7 @@ def process_depends_on(self):
     if getattr(self , 'depends_on', None):
         lst = self.to_list(self.depends_on)
         for x in lst:
-            y = self.bld.name_to_obj(x, self.env)
+            y = self.bld.get_tgen_by_name(x)
             self.bld.ASSERT(y is not None, "Failed to find dependency %s of %s" % (x, self.name))
             y.post()
             if getattr(y, 'more_includes', None):
@@ -214,7 +213,10 @@ def TO_LIST(str, delimiter=None):
     if str is None:
         return []
     if isinstance(str, list):
-        return str
+        # we need to return a new independent list...
+        return list(str)
+    if len(str) == 0:
+        return []
     lst = str.split(delimiter)
     # the string may have had quotes in it, now we
     # check if we did have quotes, and use the slower shlex
@@ -254,7 +256,7 @@ def ENFORCE_GROUP_ORDERING(bld):
         @feature('*')
         @before('exec_rule', 'apply_core', 'collect')
         def force_previous_groups(self):
-            if getattr(self.bld, 'enforced_group_ordering', False) == True:
+            if getattr(self.bld, 'enforced_group_ordering', False):
                 return
             self.bld.enforced_group_ordering = True
 
@@ -272,7 +274,7 @@ def ENFORCE_GROUP_ORDERING(bld):
                         debug('group: Forcing up to group %s for target %s',
                               group_name(g), self.name or self.target)
                         break
-                if stop != None:
+                if stop is not None:
                     break
             if stop is None:
                 return
@@ -383,12 +385,35 @@ def RUN_COMMAND(cmd,
     return -1
 
 
+def RUN_PYTHON_TESTS(testfiles, pythonpath=None):
+    env = LOAD_ENVIRONMENT()
+    if pythonpath is None:
+        pythonpath = os.path.join(Utils.g_module.blddir, 'python')
+    result = 0
+    for interp in env.python_interpreters:
+        for testfile in testfiles:
+            cmd = "PYTHONPATH=%s %s %s" % (pythonpath, interp, testfile)
+            print('Running Python test with %s: %s' % (interp, testfile))
+            ret = RUN_COMMAND(cmd)
+            if ret:
+                print('Python test failed: %s' % cmd)
+                result = ret
+    return result
+
+
 # make sure we have md5. some systems don't have it
 try:
     from hashlib import md5
+    # Even if hashlib.md5 exists, it may be unusable.
+    # Try to use MD5 function. In FIPS mode this will cause an exception
+    # and we'll get to the replacement code
+    foo = md5('abcd')
 except:
     try:
         import md5
+        # repeat the same check here, mere success of import is not enough.
+        # Try to use MD5 function. In FIPS mode this will cause an exception
+        foo = md5.md5('abcd')
     except:
         import Constants
         Constants.SIG_NIL = hash('abcd')
@@ -500,15 +525,15 @@ def CHECK_MAKEFLAGS(bld):
                 if v == 'j':
                     jobs_set = True
                 elif v == 'k':
-                    Options.options.keep = True                
+                    Options.options.keep = True
         elif opt == '-j':
             jobs_set = True
         elif opt == '-k':
-            Options.options.keep = True                
+            Options.options.keep = True
     if not jobs_set:
         # default to one job
         Options.options.jobs = 1
-            
+
 Build.BuildContext.CHECK_MAKEFLAGS = CHECK_MAKEFLAGS
 
 option_groups = {}
@@ -567,7 +592,7 @@ def map_shlib_extension(ctx, name, python=False):
         return name
     (root1, ext1) = os.path.splitext(name)
     if python:
-        (root2, ext2) = os.path.splitext(ctx.env.pyext_PATTERN)
+        return ctx.env.pyext_PATTERN % root1
     else:
         (root2, ext2) = os.path.splitext(ctx.env.shlib_PATTERN)
     return root1+ext2
@@ -618,9 +643,40 @@ def get_tgt_list(bld):
         type = targets[tgt]
         if not type in ['SUBSYSTEM', 'MODULE', 'BINARY', 'LIBRARY', 'ASN1', 'PYTHON']:
             continue
-        t = bld.name_to_obj(tgt, bld.env)
+        t = bld.get_tgen_by_name(tgt)
         if t is None:
             Logs.error("Target %s of type %s has no task generator" % (tgt, type))
             sys.exit(1)
         tgt_list.append(t)
     return tgt_list
+
+from Constants import WSCRIPT_FILE
+def PROCESS_SEPARATE_RULE(self, rule):
+    ''' cause waf to process additional script based on `rule'.
+        You should have file named wscript_<stage>_rule in the current directory
+        where stage is either 'configure' or 'build'
+    '''
+    stage = ''
+    if isinstance(self, Configure.ConfigurationContext):
+        stage = 'configure'
+    elif isinstance(self, Build.BuildContext):
+        stage = 'build'
+    file_path = os.path.join(self.curdir, WSCRIPT_FILE+'_'+stage+'_'+rule)
+    txt = load_file(file_path)
+    if txt:
+        dc = {'ctx': self}
+        if getattr(self.__class__, 'pre_recurse', None):
+            dc = self.pre_recurse(txt, file_path, self.curdir)
+        exec(compile(txt, file_path, 'exec'), dc)
+        if getattr(self.__class__, 'post_recurse', None):
+            dc = self.post_recurse(txt, file_path, self.curdir)
+
+Build.BuildContext.PROCESS_SEPARATE_RULE = PROCESS_SEPARATE_RULE
+ConfigurationContext.PROCESS_SEPARATE_RULE = PROCESS_SEPARATE_RULE
+
+def AD_DC_BUILD_IS_ENABLED(self):
+    if self.CONFIG_SET('AD_DC_BUILD_IS_ENABLED'):
+        return True
+    return False
+
+Build.BuildContext.AD_DC_BUILD_IS_ENABLED = AD_DC_BUILD_IS_ENABLED

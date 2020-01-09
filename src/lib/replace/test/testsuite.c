@@ -24,6 +24,8 @@
 */
 
 #include "replace.h"
+#include "replace-test.h"
+#include "replace-testsuite.h"
 
 /*
   we include all the system/ include files here so that libreplace tests
@@ -48,8 +50,6 @@
 
 #define TESTFILE "testfile.dat"
 
-struct torture_context;
-bool torture_local_replace(struct torture_context *ctx);
 
 /*
   test ftruncate() function
@@ -69,19 +69,23 @@ static int test_ftruncate(void)
 	}
 	if (ftruncate(fd, size) != 0) {
 		printf("failure: ftruncate [\n%s\n]\n", strerror(errno));
+		close(fd);
 		return false;
 	}
 	if (fstat(fd, &st) != 0) {
 		printf("failure: ftruncate [\nfstat failed - %s\n]\n", strerror(errno));
+		close(fd);
 		return false;
 	}
 	if (st.st_size != size) {
 		printf("failure: ftruncate [\ngave wrong size %d - expected %d\n]\n",
 		       (int)st.st_size, size);
+		close(fd);
 		return false;
 	}
 	unlink(TESTFILE);
 	printf("success: ftruncate\n");
+	close(fd);
 	return true;
 }
 
@@ -272,6 +276,7 @@ static int test_strndup(void)
 	x = strndup("bla", 10);
 	if (strcmp(x, "bla") != 0) {
 		printf("failure: strndup [\ninvalid\n]\n");
+		free(x);
 		return false;
 	}
 	free(x);
@@ -379,8 +384,6 @@ static int test_opendir(void)
 	return true;
 }
 
-extern int test_readdir_os2_delete(void);
-
 static int test_readdir(void)
 {
 	printf("test: readdir\n");
@@ -460,12 +463,6 @@ static int test_pread(void)
 }
 
 static int test_pwrite(void)
-{
-	/* FIXME */
-	return true;
-}
-
-static int test_getpass(void)
 {
 	/* FIXME */
 	return true;
@@ -895,6 +892,7 @@ static int test_utime(void)
 		printf("failure: utime [\n"
 		       "fstat (1) failed - %s\n]\n",
 		       strerror(errno));
+		close(fd);
 		return false;
 	}
 
@@ -904,6 +902,7 @@ static int test_utime(void)
 		printf("failure: utime [\n"
 		       "utime(&u) failed - %s\n]\n",
 		       strerror(errno));
+		close(fd);
 		return false;
 	}
 
@@ -911,6 +910,7 @@ static int test_utime(void)
 		printf("failure: utime [\n"
 		       "fstat (2) failed - %s\n]\n",
 		       strerror(errno));
+		close(fd);
 		return false;
 	}
 
@@ -918,6 +918,7 @@ static int test_utime(void)
 		printf("failure: utime [\n"
 		       "utime(NULL) failed - %s\n]\n",
 		       strerror(errno));
+		close(fd);
 		return false;
 	}
 
@@ -925,6 +926,7 @@ static int test_utime(void)
 		printf("failure: utime [\n"
 		       "fstat (3) failed - %s\n]\n",
 		       strerror(errno));
+		close(fd);
 		return false;
 	}
 
@@ -934,6 +936,7 @@ static int test_utime(void)
 		       "%s: %s(%d) %s %s(%d)\n]\n", \
 		       __location__, \
 		       #a, (int)a, #c, #b, (int)b); \
+		close(fd); \
 		return false; \
 	} \
 } while(0)
@@ -953,6 +956,7 @@ static int test_utime(void)
 
 	unlink(TESTFILE);
 	printf("success: utime\n");
+	close(fd);
 	return true;
 }
 
@@ -977,6 +981,7 @@ static int test_utimes(void)
 		printf("failure: utimes [\n"
 		       "fstat (1) failed - %s\n]\n",
 		       strerror(errno));
+		close(fd);
 		return false;
 	}
 
@@ -987,6 +992,7 @@ static int test_utimes(void)
 		printf("failure: utimes [\n"
 		       "utimes(tv) failed - %s\n]\n",
 		       strerror(errno));
+		close(fd);
 		return false;
 	}
 
@@ -994,6 +1000,7 @@ static int test_utimes(void)
 		printf("failure: utimes [\n"
 		       "fstat (2) failed - %s\n]\n",
 		       strerror(errno));
+		close(fd);
 		return false;
 	}
 
@@ -1003,6 +1010,7 @@ static int test_utimes(void)
 		       "%s: %s(%d) != %s(%d)\n]\n", \
 		       __location__, \
 		       #a, (int)a, #b, (int)b); \
+		close(fd); \
 		return false; \
 	} \
 } while(0)
@@ -1014,6 +1022,7 @@ static int test_utimes(void)
 
 	unlink(TESTFILE);
 	printf("success: utimes\n");
+	close(fd);
 	return true;
 }
 
@@ -1091,7 +1100,6 @@ bool torture_local_replace(struct torture_context *ctx)
 	ret &= test_mkstemp();
 	ret &= test_pread();
 	ret &= test_pwrite();
-	ret &= test_getpass();
 	ret &= test_inet_ntoa();
 	ret &= test_strtoll();
 	ret &= test_strtoull();

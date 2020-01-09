@@ -1,7 +1,8 @@
 # specialist handling of header files for Samba
 
-import Build, re, Task, TaskGen, shutil, sys, Logs
-from samba_utils import *
+import os, re, sys, fnmatch
+import Build, Logs, Utils
+from samba_utils import TO_LIST, os_path_relpath
 
 
 def header_install_path(header, header_path):
@@ -119,7 +120,6 @@ def public_headers_simple(bld, public_headers, header_path=None, public_headers_
             h_name =  h
             inst_name = os.path.basename(h)
         bld.INSTALL_FILES('${INCLUDEDIR}', h_name, destname=inst_name)
-        
 
 
 def PUBLIC_HEADERS(bld, public_headers, header_path=None, public_headers_install=True):
