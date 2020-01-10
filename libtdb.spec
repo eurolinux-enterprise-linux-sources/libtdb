@@ -5,8 +5,8 @@
 %{!?python_version: %global python_version %(%{__python} -c "from distutils.sysconfig import get_python_version; print(get_python_version())")}
 
 Name: libtdb
-Version: 1.3.12
-Release: 2%{?dist}
+Version: 1.3.15
+Release: 1%{?dist}
 Group: System Environment/Daemons
 Summary: The tdb library
 License: LGPLv3+
@@ -22,15 +22,6 @@ BuildRequires: python-devel
 Provides: bundled(libreplace)
 
 # Patches
-Patch0001: 0001-waf-disable-python-align-tdb-s-wscript.patch
-Patch0002: 0002-tdb-tools-add-documentation-for-the-tdbbackup-n-opti.patch
-Patch0003: 0003-tdb-Fix-some-signed-unsigned-hickups.patch
-Patch0004: 0004-tdb-Do-lock-upgrades-properly.patch
-Patch0005: 0005-tdb-Test-for-readonly-lock-upgrade-bug.patch
-Patch0006: 0006-tdbtool-Add-storehex-command.patch
-Patch0007: 0007-tdb-runtime-check-for-robust-mutexes-may-hang-in-thr.patch
-Patch0008: 0008-tdb-Improve-debugging-when-the-allrecord-lock-fails-.patch
-Patch0009: 0009-tdb-Improve-debugging-in-_tdb_transaction_start.patch
 
 %description
 A library that implements a trivial database.
@@ -124,6 +115,10 @@ rm -rf $RPM_BUILD_ROOT
 %postun -n python-tdb -p /sbin/ldconfig
 
 %changelog
+* Sun Oct 15 2017 Jakub Hrozek <jhrozek@redhat.com> - 1.3.15-1
+- Resolves: rhbz#1470049 - Rebase libtdb to enable samba rebase to
+                           version 4.7.x
+
 * Tue May  2 2017 Jakub Hrozek <jhrozek@redhat.com> - 1.3.12-2
 - Resolves: rhbz#1441231 - The tdb robust mutexes runtime check is not thread safe and ends in a deadlock
 
