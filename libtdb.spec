@@ -5,8 +5,8 @@
 %{!?python_version: %global python_version %(%{__python} -c "from distutils.sysconfig import get_python_version; print(get_python_version())")}
 
 Name: libtdb
-Version: 1.3.6
-Release: 2%{?dist}
+Version: 1.3.8
+Release: 1%{?dist}
 Group: System Environment/Daemons
 Summary: The tdb library
 License: LGPLv3+
@@ -22,7 +22,6 @@ BuildRequires: python-devel
 Provides: bundled(libreplace)
 
 # Patches
-Patch0001:      tbd-deadlock.patch
 
 %description
 A library that implements a trivial database.
@@ -54,7 +53,6 @@ Python bindings for libtdb
 
 %prep
 %setup -q -n tdb-%{version}
-%patch0001 -p3
 
 %build
 %configure --disable-rpath \
@@ -101,6 +99,7 @@ rm -rf $RPM_BUILD_ROOT
 %files -n python-tdb
 %defattr(-,root,root,-)
 %{python_sitearch}/tdb.so
+%{python_sitearch}/_tdb_text.py*
 
 %post -p /sbin/ldconfig
 
@@ -111,6 +110,10 @@ rm -rf $RPM_BUILD_ROOT
 %postun -n python-tdb -p /sbin/ldconfig
 
 %changelog
+* Fri Apr  1 2016 Jakub Hrozek <jhrozek@redhat.com> - 1.3.8-1
+- Rebase libtdb to 1.3.8
+- Related: rhbz#1322690
+
 * Wed Aug 19 2015 Jakub Hrozek <jhrozek@redhat.com> - 1.3.6-2
 - Resolves: rhbz#1241015 - tdb deadlocks if you acquire allrecord_lock
                            and start two traverses
