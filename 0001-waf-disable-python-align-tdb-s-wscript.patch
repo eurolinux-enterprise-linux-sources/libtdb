@@ -1,0 +1,52 @@
+From 81ff0f306523079396e8538d5cbff7e9f008f062 Mon Sep 17 00:00:00 2001
+From: Ian Stakenvicius <axs@gentoo.org>
+Date: Fri, 27 Jan 2017 14:42:05 -0500
+Subject: [PATCH] waf: disable-python - align tdb's wscript
+
+Drop the configure option for --disable-python as it is now
+global in wafsamba.
+
+If samba is set to use a system copy of tdb, and tdb wasn't built
+with python support, then the system pytevent will not be found.  If
+samba is being built without python support then pytdb is not needed,
+so do not bother to try and find it.
+
+Signed-off-by: Ian Stakenvicius <axs@gentoo.org>
+Reviewed-by: Andrew Bartlett <abartlet@samba.org>
+Reviewed-by: Douglas Bagnall <douglas.bagnall@catalyst.net.nz>
+---
+ lib/tdb/wscript | 9 ++-------
+ 1 file changed, 2 insertions(+), 7 deletions(-)
+
+diff --git a/lib/tdb/wscript b/lib/tdb/wscript
+index 34058e4c9fa5889c627a89c2e1a1731390555f84..0d682ebb4cdaa001904e0b40e50e1a2e46f230ee 100644
+--- a/lib/tdb/wscript
++++ b/lib/tdb/wscript
+@@ -60,10 +60,6 @@ def set_options(opt):
+                    help=("Disable the use of pthread robust mutexes"),
+                    action="store_true", dest='disable_tdb_mutex_locking',
+                    default=False)
+-    if opt.IN_LAUNCH_DIR():
+-        opt.add_option('--disable-python',
+-                       help=("disable the pytdb module"),
+-                       action="store_true", dest='disable_python', default=False)
+ 
+ 
+ def configure(conf):
+@@ -82,11 +78,10 @@ def configure(conf):
+                                      implied_deps='replace'):
+             conf.define('USING_SYSTEM_TDB', 1)
+             conf.env.building_tdb = False
+-            if conf.CHECK_BUNDLED_SYSTEM_PYTHON('pytdb', 'tdb', minversion=VERSION):
++            if not conf.env.disable_python and \
++                conf.CHECK_BUNDLED_SYSTEM_PYTHON('pytdb', 'tdb', minversion=VERSION):
+                 conf.define('USING_SYSTEM_PYTDB', 1)
+ 
+-    conf.env.disable_python = getattr(Options.options, 'disable_python', False)
+-
+     if (conf.CONFIG_SET('HAVE_ROBUST_MUTEXES') and
+         conf.env.building_tdb and
+         not conf.env.disable_tdb_mutex_locking):
+-- 
+2.9.3
+

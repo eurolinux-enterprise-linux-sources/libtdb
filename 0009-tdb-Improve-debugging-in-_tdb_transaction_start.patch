@@ -1,0 +1,30 @@
+From 36078263344fbad348fe21da757976ecd6d55be6 Mon Sep 17 00:00:00 2001
+From: Andrew Bartlett <abartlet@samba.org>
+Date: Fri, 31 Mar 2017 17:35:06 +1300
+Subject: [PATCH] tdb: Improve debugging in _tdb_transaction_start
+
+Signed-off-by: Andrew Bartlett <abartlet@samba.org>
+Reviewed-by: Stefan Metzmacher <metze@samba.org>
+Reviewed-by: Andreas Schneider <asn@samba.org>
+---
+ lib/tdb/common/transaction.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/lib/tdb/common/transaction.c b/lib/tdb/common/transaction.c
+index 4d08fee6c25e61c61c783d08fc64c611fab51119..f1050a2f7d9e9c86856d1469739c2a2d70ca1c85 100644
+--- a/lib/tdb/common/transaction.c
++++ b/lib/tdb/common/transaction.c
+@@ -476,6 +476,10 @@ static int _tdb_transaction_start(struct tdb_context *tdb,
+ 		SAFE_FREE(tdb->transaction);
+ 		if ((lockflags & TDB_LOCK_WAIT) == 0) {
+ 			tdb->ecode = TDB_ERR_NOLOCK;
++		} else {
++			TDB_LOG((tdb, TDB_DEBUG_ERROR,
++				 "tdb_transaction_start: "
++				 "failed to get transaction lock\n"));
+ 		}
+ 		return -1;
+ 	}
+-- 
+2.9.3
+

@@ -1,0 +1,54 @@
+From 1148e8f0408b62b0417daf8e2727cdaf7cffed09 Mon Sep 17 00:00:00 2001
+From: Andrew Bartlett <abartlet@samba.org>
+Date: Thu, 30 Mar 2017 19:11:06 +1300
+Subject: [PATCH] tdb: Improve debugging when the allrecord lock fails to
+ upgrade
+
+Pair-Programmed-With: Stefan Metzmacher <metze@samba.org>
+
+Signed-off-by: Andrew Bartlett <abartlet@samba.org>
+Signed-off-by: Stefan Metzmacher <metze@samba.org>
+Reviewed-by: Andreas Schneider <asn@samba.org>
+---
+ lib/tdb/common/lock.c        | 2 ++
+ lib/tdb/common/transaction.c | 5 ++++-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/lib/tdb/common/lock.c b/lib/tdb/common/lock.c
+index 4ad70cff3fe639abb781b204aa86a437e4a7adfe..e330201961a05bfef839659f260a5bbae078fbb5 100644
+--- a/lib/tdb/common/lock.c
++++ b/lib/tdb/common/lock.c
+@@ -257,12 +257,14 @@ int tdb_allrecord_upgrade(struct tdb_context *tdb)
+ 		TDB_LOG((tdb, TDB_DEBUG_ERROR,
+ 			 "tdb_allrecord_upgrade failed: count %u too high\n",
+ 			 tdb->allrecord_lock.count));
++		tdb->ecode = TDB_ERR_LOCK;
+ 		return -1;
+ 	}
+ 
+ 	if (tdb->allrecord_lock.off != 1) {
+ 		TDB_LOG((tdb, TDB_DEBUG_ERROR,
+ 			 "tdb_allrecord_upgrade failed: already upgraded?\n"));
++		tdb->ecode = TDB_ERR_LOCK;
+ 		return -1;
+ 	}
+ 
+diff --git a/lib/tdb/common/transaction.c b/lib/tdb/common/transaction.c
+index 0dd057ba7a71151e5173cb6d9b25666f915eab27..4d08fee6c25e61c61c783d08fc64c611fab51119 100644
+--- a/lib/tdb/common/transaction.c
++++ b/lib/tdb/common/transaction.c
+@@ -982,7 +982,10 @@ static int _tdb_transaction_prepare_commit(struct tdb_context *tdb)
+ 
+ 	/* upgrade the main transaction lock region to a write lock */
+ 	if (tdb_allrecord_upgrade(tdb) == -1) {
+-		TDB_LOG((tdb, TDB_DEBUG_ERROR, "tdb_transaction_prepare_commit: failed to upgrade hash locks\n"));
++		TDB_LOG((tdb, TDB_DEBUG_ERROR,
++			"tdb_transaction_prepare_commit: "
++			"failed to upgrade hash locks: %s\n",
++			 tdb_errorstr(tdb)));
+ 		_tdb_transaction_cancel(tdb);
+ 		return -1;
+ 	}
+-- 
+2.9.3
+

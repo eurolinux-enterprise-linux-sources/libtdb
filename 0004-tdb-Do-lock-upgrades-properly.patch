@@ -1,0 +1,47 @@
+From a6f1532d7fedc6b6f36b511aebe8998e9452b7ff Mon Sep 17 00:00:00 2001
+From: Volker Lendecke <vl@samba.org>
+Date: Mon, 7 Nov 2016 21:40:15 +0100
+Subject: [PATCH] tdb: Do lock upgrades properly
+
+When a process holds a readlock and wants to upgrade, this needs to be
+reflected in the underlying lock. Without this, it is possible to cheat:
+One process holds a readlock, and another process wants to write this
+record. All the writer has to do is take a readonly lock on the key and
+then do the store.
+
+Signed-off-by: Volker Lendecke <vl@samba.org>
+Reviewed-by: Jeremy Allison <jra@samba.org>
+---
+ lib/tdb/common/lock.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/lib/tdb/common/lock.c b/lib/tdb/common/lock.c
+index 594c28751f1d68c8305bd225f228c437fee81c9e..4ad70cff3fe639abb781b204aa86a437e4a7adfe 100644
+--- a/lib/tdb/common/lock.c
++++ b/lib/tdb/common/lock.c
+@@ -321,6 +321,22 @@ int tdb_nest_lock(struct tdb_context *tdb, uint32_t offset, int ltype,
+ 
+ 	new_lck = find_nestlock(tdb, offset);
+ 	if (new_lck) {
++		if ((new_lck->ltype == F_RDLCK) && (ltype == F_WRLCK)) {
++			if (!tdb_have_mutexes(tdb)) {
++				int ret;
++				/*
++				 * Upgrade the underlying fcntl
++				 * lock. Mutexes don't do readlocks,
++				 * so this only applies to fcntl
++				 * locking.
++				 */
++				ret = tdb_brlock(tdb, ltype, offset, 1, flags);
++				if (ret != 0) {
++					return ret;
++				}
++			}
++			new_lck->ltype = F_WRLCK;
++		}
+ 		/*
+ 		 * Just increment the in-memory struct, posix locks
+ 		 * don't stack.
+-- 
+2.9.3
+
