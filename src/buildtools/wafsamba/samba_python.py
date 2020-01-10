@@ -1,16 +1,14 @@
 # waf build tool for building IDL files with pidl
 
-import os
-import Build, Logs, Utils, Configure
+import Build
+from samba_utils import *
+from samba_autoconf import *
+
 from Configure import conf
 
 @conf
 def SAMBA_CHECK_PYTHON(conf, mandatory=True, version=(2,4,2)):
     # enable tool to build python extensions
-    if conf.env.HAVE_PYTHON_H:
-        conf.check_python_version(version)
-        return
-
     interpreters = []
 
     if conf.env['EXTRA_PYTHON']:
@@ -23,7 +21,7 @@ def SAMBA_CHECK_PYTHON(conf, mandatory=True, version=(2,4,2)):
         try:
             conf.check_python_version((3, 3, 0))
         except Exception:
-            Logs.warn('extra-python needs to be Python 3.3 or later')
+            warn('extra-python needs to be Python 3.3 or later')
             raise
         interpreters.append(conf.env['PYTHON'])
         conf.setenv('default')
@@ -40,18 +38,6 @@ def SAMBA_CHECK_PYTHON(conf, mandatory=True, version=(2,4,2)):
 
 @conf
 def SAMBA_CHECK_PYTHON_HEADERS(conf, mandatory=True):
-    if conf.env.disable_python:
-        if mandatory:
-            raise Utils.WafError("Cannot check for python headers when "
-                                 "--disable-python specified")
-
-        conf.msg("python headers", "Check disabled due to --disable-python")
-        # we don't want PYTHONDIR in config.h, as otherwise changing
-        # --prefix causes a complete rebuild
-        del(conf.env.defines['PYTHONDIR'])
-        del(conf.env.defines['PYTHONARCHDIR'])
-        return
-
     if conf.env["python_headers_checked"] == []:
         if conf.env['EXTRA_PYTHON']:
             conf.setenv('extrapython')
@@ -69,38 +55,15 @@ def SAMBA_CHECK_PYTHON_HEADERS(conf, mandatory=True):
     else:
         conf.msg("python headers", "using cache")
 
-    # we don't want PYTHONDIR in config.h, as otherwise changing
-    # --prefix causes a complete rebuild
-    del(conf.env.defines['PYTHONDIR'])
-    del(conf.env.defines['PYTHONARCHDIR'])
 
 def _check_python_headers(conf, mandatory):
-    try:
-        Configure.ConfigurationError
-        conf.check_python_headers(mandatory=mandatory)
-    except Configure.ConfigurationError:
-        if mandatory:
-             raise
+    conf.check_python_headers(mandatory=mandatory)
 
     if conf.env['PYTHON_VERSION'] > '3':
         abi_pattern = os.path.splitext(conf.env['pyext_PATTERN'])[0]
         conf.env['PYTHON_SO_ABI_FLAG'] = abi_pattern % ''
     else:
         conf.env['PYTHON_SO_ABI_FLAG'] = ''
-    conf.env['PYTHON_LIBNAME_SO_ABI_FLAG'] = (
-        conf.env['PYTHON_SO_ABI_FLAG'].replace('_', '-'))
-
-    for lib in conf.env['LINKFLAGS_PYEMBED']:
-        if lib.startswith('-L'):
-            conf.env.append_unique('LIBPATH_PYEMBED', lib[2:]) # strip '-L'
-            conf.env['LINKFLAGS_PYEMBED'].remove(lib)
-
-    return
-
-def PYTHON_BUILD_IS_ENABLED(self):
-    return self.CONFIG_SET('HAVE_PYTHON_H')
-
-Build.BuildContext.PYTHON_BUILD_IS_ENABLED = PYTHON_BUILD_IS_ENABLED
 
 
 def SAMBA_PYTHON(bld, name,
@@ -109,7 +72,6 @@ def SAMBA_PYTHON(bld, name,
                  public_deps='',
                  realname=None,
                  cflags='',
-                 cflags_end=None,
                  includes='',
                  init_function_sentinel=None,
                  local_include=True,
@@ -118,29 +80,13 @@ def SAMBA_PYTHON(bld, name,
                  enabled=True):
     '''build a python extension for Samba'''
 
-    # force-disable when we can't build python modules, so
-    # every single call doesn't need to pass this in.
-    if not bld.PYTHON_BUILD_IS_ENABLED():
-        enabled = False
-
     if bld.env['IS_EXTRA_PYTHON']:
         name = 'extra-' + name
 
     # when we support static python modules we'll need to gather
     # the list from all the SAMBA_PYTHON() targets
     if init_function_sentinel is not None:
-        cflags += ' -DSTATIC_LIBPYTHON_MODULES=%s' % init_function_sentinel
-
-    # From https://docs.python.org/2/c-api/arg.html:
-    # Starting with Python 2.5 the type of the length argument to
-    # PyArg_ParseTuple(), PyArg_ParseTupleAndKeywords() and PyArg_Parse()
-    # can be controlled by defining the macro PY_SSIZE_T_CLEAN before
-    # including Python.h. If the macro is defined, length is a Py_ssize_t
-    # rather than an int.
-
-    # Because <Python.h> if often included before includes.h/config.h
-    # This must be in the -D compiler options
-    cflags += ' -DPY_SSIZE_T_CLEAN=1'
+        cflags += '-DSTATIC_LIBPYTHON_MODULES=%s' % init_function_sentinel
 
     source = bld.EXPAND_VARIABLES(source, vars=vars)
 
@@ -155,7 +101,6 @@ def SAMBA_PYTHON(bld, name,
                       public_deps=public_deps,
                       includes=includes,
                       cflags=cflags,
-                      cflags_end=cflags_end,
                       local_include=local_include,
                       vars=vars,
                       realname=realname,
@@ -171,10 +116,7 @@ Build.BuildContext.SAMBA_PYTHON = SAMBA_PYTHON
 
 
 def pyembed_libname(bld, name, extrapython=False):
-    if bld.env['PYTHON_SO_ABI_FLAG']:
-        return name + bld.env['PYTHON_SO_ABI_FLAG']
-    else:
-        return name
+    return name + bld.env['PYTHON_SO_ABI_FLAG']
 
 Build.BuildContext.pyembed_libname = pyembed_libname
 

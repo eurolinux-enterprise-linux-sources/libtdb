@@ -4,9 +4,6 @@
 #if defined(HAVE_UNISTD_H)
 #include <unistd.h>
 #endif
-#ifdef HAVE_STDLIB_H
-#include <stdlib.h>
-#endif
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -18,7 +15,7 @@
 #define MAP_FILE 0
 #endif
 
-int main(void)
+main()
 {
 	int *buf;
 	int i; 

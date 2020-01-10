@@ -5,8 +5,8 @@
 %{!?python_version: %global python_version %(%{__python} -c "from distutils.sysconfig import get_python_version; print(get_python_version())")}
 
 Name: libtdb
-Version: 1.3.16
-Release: 1%{?dist}
+Version: 1.3.6
+Release: 2%{?dist}
 Group: System Environment/Daemons
 Summary: The tdb library
 License: LGPLv3+
@@ -22,6 +22,7 @@ BuildRequires: python-devel
 Provides: bundled(libreplace)
 
 # Patches
+Patch0001:      tbd-deadlock.patch
 
 %description
 A library that implements a trivial database.
@@ -53,11 +54,7 @@ Python bindings for libtdb
 
 %prep
 %setup -q -n tdb-%{version}
-
-for p in %patches ; do
-    %__patch -p3 -i $p
-done
-
+%patch0001 -p3
 
 %build
 %configure --disable-rpath \
@@ -104,7 +101,6 @@ rm -rf $RPM_BUILD_ROOT
 %files -n python-tdb
 %defattr(-,root,root,-)
 %{python_sitearch}/tdb.so
-%{python_sitearch}/_tdb_text.py*
 
 %post -p /sbin/ldconfig
 
@@ -115,23 +111,6 @@ rm -rf $RPM_BUILD_ROOT
 %postun -n python-tdb -p /sbin/ldconfig
 
 %changelog
-* Tue Jan 15 2019 Jakub Hrozek <jhrozek@redhat.com> - 1.3.16-1
-- Resolves: rhbz#1658745 - Rebase libtdb to version 1.3.16 for Samba
-
-* Sun Oct 15 2017 Jakub Hrozek <jhrozek@redhat.com> - 1.3.15-1
-- Resolves: rhbz#1470049 - Rebase libtdb to enable samba rebase to
-                           version 4.7.x
-
-* Tue May  2 2017 Jakub Hrozek <jhrozek@redhat.com> - 1.3.12-2
-- Resolves: rhbz#1441231 - The tdb robust mutexes runtime check is not thread safe and ends in a deadlock
-
-* Tue Feb 14 2017 Jakub Hrozek <jhrozek@redhat.com> - 1.3.12-1
-- Resolves: rhbz#1393812 - Rebase libtevent in RHEL-7.4 to version 4.6.x
-
-* Fri Apr  1 2016 Jakub Hrozek <jhrozek@redhat.com> - 1.3.8-1
-- Rebase libtdb to 1.3.8
-- Related: rhbz#1322691
-
 * Wed Aug 19 2015 Jakub Hrozek <jhrozek@redhat.com> - 1.3.6-2
 - Resolves: rhbz#1241015 - tdb deadlocks if you acquire allrecord_lock
                            and start two traverses

@@ -171,10 +171,6 @@
 #include <sys/types.h>
 #endif
 
-#ifdef HAVE_SYS_SYSMACROS_H
-#include <sys/sysmacros.h>
-#endif
-
 #ifdef HAVE_SETPROCTITLE_H
 #include <setproctitle.h>
 #endif
@@ -250,12 +246,6 @@ size_t rep_strlcpy(char *d, const char *s, size_t bufsize);
 #define strlcat rep_strlcat
 size_t rep_strlcat(char *d, const char *s, size_t bufsize);
 #endif
-
-#ifndef HAVE_CLOSEFROM
-#define closefrom rep_closefrom
-int rep_closefrom(int lower);
-#endif
-
 
 #if (defined(BROKEN_STRNDUP) || !defined(HAVE_STRNDUP))
 #undef HAVE_STRNDUP
@@ -359,11 +349,6 @@ void rep_setlinebuf(FILE *);
 char *rep_strcasestr(const char *haystack, const char *needle);
 #endif
 
-#ifndef HAVE_STRSEP
-#define strsep rep_strsep
-char *rep_strsep(char **pps, const char *delim);
-#endif
-
 #ifndef HAVE_STRTOK_R
 #define strtok_r rep_strtok_r
 char *rep_strtok_r(char *s, const char *delim, char **save_ptr);
@@ -435,7 +420,7 @@ int rep_dlclose(void *handle);
 #endif
 
 #ifndef PRINTF_ATTRIBUTE
-#ifdef HAVE___ATTRIBUTE__
+#if (__GNUC__ >= 3) && (__GNUC_MINOR__ >= 1 )
 /** Use gcc attribute to check printf fns.  a1 is the 1-based index of
  * the parameter containing the format, and a2 the index of the first
  * argument. Note that some gcc 2.x versions don't handle this
@@ -447,7 +432,7 @@ int rep_dlclose(void *handle);
 #endif
 
 #ifndef _DEPRECATED_
-#ifdef HAVE___ATTRIBUTE__
+#if (__GNUC__ >= 3) && (__GNUC_MINOR__ >= 1 )
 #define _DEPRECATED_ __attribute__ ((deprecated))
 #else
 #define _DEPRECATED_
@@ -628,7 +613,7 @@ ssize_t rep_pwrite(int __fd, const void *__buf, size_t __nbytes, off_t __offset)
 char *rep_get_current_dir_name(void);
 #endif
 
-#if (!defined(HAVE_STRERROR_R) || !defined(STRERROR_R_XSI_NOT_GNU))
+#ifndef HAVE_STRERROR_R
 #define strerror_r rep_strerror_r
 int rep_strerror_r(int errnum, char *buf, size_t buflen);
 #endif
@@ -691,12 +676,10 @@ typedef int bool;
 
 #if !defined(HAVE_INTPTR_T)
 typedef long long intptr_t ;
-#define __intptr_t_defined
 #endif
 
 #if !defined(HAVE_UINTPTR_T)
 typedef unsigned long long uintptr_t ;
-#define __uintptr_t_defined
 #endif
 
 #if !defined(HAVE_PTRDIFF_T)
@@ -919,19 +902,6 @@ int usleep(useconds_t);
 #define setproctitle rep_setproctitle
 void rep_setproctitle(const char *fmt, ...) PRINTF_ATTRIBUTE(1, 2);
 #endif
-
-#ifndef HAVE_SETPROCTITLE_INIT
-#define setproctitle_init rep_setproctitle_init
-void rep_setproctitle_init(int argc, char *argv[], char *envp[]);
-#endif
-
-#ifndef FALL_THROUGH
-# ifdef HAVE_FALLTHROUGH_ATTRIBUTE
-#  define FALL_THROUGH __attribute__ ((fallthrough))
-# else /* HAVE_FALLTHROUGH_ATTRIBUTE */
-#  define FALL_THROUGH ((void)0)
-# endif /* HAVE_FALLTHROUGH_ATTRIBUTE */
-#endif /* FALL_THROUGH */
 
 bool nss_wrapper_enabled(void);
 bool nss_wrapper_hosts_enabled(void);

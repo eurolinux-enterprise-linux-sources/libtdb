@@ -34,7 +34,7 @@
  *    probably requires libm on most operating systems.  Don't yet
  *    support the exponent (e,E) and sigfig (g,G).  Also, fmtint()
  *    was pretty badly broken, it just wasn't being exercised in ways
- *    which showed it, so that's been fixed.  Also, formatted the code
+ *    which showed it, so that's been fixed.  Also, formated the code
  *    to mutt conventions, and removed dead code left over from the
  *    original.  Also, there is now a builtin-test, just compile with:
  *           gcc -DTEST_SNPRINTF -o snprintf snprintf.c -lm
@@ -804,7 +804,7 @@ static void fmtint(char *buffer, size_t *currlen, size_t maxlen,
 {
 	int signvalue = 0;
 	unsigned LLONG uvalue;
-	char convert[22+1]; /* 64-bit value in octal: 22 digits + \0 */
+	char convert[20];
 	int place = 0;
 	int spadlen = 0; /* amount to space pad */
 	int zpadlen = 0; /* amount to zero pad */
@@ -834,8 +834,8 @@ static void fmtint(char *buffer, size_t *currlen, size_t maxlen,
 			(caps? "0123456789ABCDEF":"0123456789abcdef")
 			[uvalue % (unsigned)base  ];
 		uvalue = (uvalue / (unsigned)base );
-	} while(uvalue && (place < sizeof(convert)));
-	if (place == sizeof(convert)) place--;
+	} while(uvalue && (place < 20));
+	if (place == 20) place--;
 	convert[place] = 0;
 
 	zpadlen = max - place;

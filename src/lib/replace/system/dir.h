@@ -46,10 +46,6 @@
 #define mkdir(dir, mode) mkdir(dir)
 #endif
 
-#if HAVE_LIBGEN_H
-# include <libgen.h>
-#endif
-
 /* Test whether a file name is the "." or ".." directory entries.
  * These really should be inline functions.
  */

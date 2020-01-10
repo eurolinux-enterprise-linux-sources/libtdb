@@ -42,10 +42,12 @@ def git_version_summary(path, env=None):
 
 def distversion_version_summary(path):
     #get version from .distversion file
+    f = open(path + '/.distversion', 'r')
     suffix = None
     fields = {}
 
-    for line in Utils.readf(path + '/.distversion').splitlines():
+    for line in f:
+        line = line.strip()
         if line == '':
             continue
         if line.startswith("#"):
@@ -62,6 +64,7 @@ def distversion_version_summary(path):
         except:
             print("Failed to parse line %s from .distversion file." % (line))
             raise
+    f.close()
 
     if "COMMIT_TIME" in fields:
         fields["COMMIT_TIME"] = int(fields["COMMIT_TIME"])
@@ -95,7 +98,7 @@ also accepted as dictionary entries here
         self.VENDOR_SUFFIX=None
         self.VENDOR_PATCH=None
 
-        for a, b in version_dict.items():
+        for a, b in version_dict.iteritems():
             if a.startswith("SAMBA_VERSION_"):
                 setattr(self, a[14:], b)
             else:

@@ -1,20 +1,25 @@
 # a waf tool to add extension based build patterns for Samba
 
-import Build
+import Task
+from TaskGen import extension
+from samba_utils import *
 from wafsamba import samba_version_file
 
 def write_version_header(task):
     '''print version.h contents'''
     src = task.inputs[0].srcpath(task.env)
+    tgt = task.outputs[0].bldpath(task.env)
 
-    version = samba_version_file(src, task.env.srcdir, env=task.env, is_install=task.generator.bld.is_install)
+    version = samba_version_file(src, task.env.srcdir, env=task.env, is_install=task.env.is_install)
     string = str(version)
 
-    task.outputs[0].write(string)
+    f = open(tgt, 'w')
+    s = f.write(string)
+    f.close()
     return 0
 
 
-def SAMBA_MKVERSION(bld, target, source='VERSION'):
+def SAMBA_MKVERSION(bld, target):
     '''generate the version.h header for Samba'''
 
     # We only force waf to re-generate this file if we are installing,
@@ -22,9 +27,10 @@ def SAMBA_MKVERSION(bld, target, source='VERSION'):
     # git revision) included in the version.
     t = bld.SAMBA_GENERATOR('VERSION',
                             rule=write_version_header,
-                            source=source,
+                            source= 'VERSION',
                             target=target,
                             always=bld.is_install)
+    t.env.is_install = bld.is_install
 Build.BuildContext.SAMBA_MKVERSION = SAMBA_MKVERSION
 
 
@@ -51,6 +57,7 @@ def write_build_options_header(fp):
     fp.write("*/\n")
     fp.write("\n")
     fp.write("#include \"includes.h\"\n")
+    fp.write("#include \"build_env.h\"\n")
     fp.write("#include \"dynconfig/dynconfig.h\"\n")
     fp.write("#include \"lib/cluster_support.h\"\n")
 
@@ -91,6 +98,19 @@ def write_build_options_header(fp):
     fp.write("              return;\n")
     fp.write("       }\n")
     fp.write("\n")
+    fp.write("#ifdef _BUILD_ENV_H\n")
+    fp.write("       /* Output information about the build environment */\n")
+    fp.write("       output(screen,\"Build environment:\\n\");\n")
+    fp.write("       output(screen,\"   Built by:    %s@%s\\n\",BUILD_ENV_USER,BUILD_ENV_HOST);\n")
+    fp.write("       output(screen,\"   Built on:    %s\\n\",BUILD_ENV_DATE);\n")
+    fp.write("\n")
+    fp.write("       output(screen,\"   Built using: %s\\n\",BUILD_ENV_COMPILER);\n")
+    fp.write("       output(screen,\"   Build host:  %s\\n\",BUILD_ENV_UNAME);\n")
+    fp.write("       output(screen,\"   SRCDIR:      %s\\n\",BUILD_ENV_SRCDIR);\n")
+    fp.write("       output(screen,\"   BUILDDIR:    %s\\n\",BUILD_ENV_BUILDDIR);\n")
+    fp.write("\n")
+    fp.write("\n")
+    fp.write("#endif\n")
     fp.write("\n")
     fp.write("       /* Output various paths to files and directories */\n")
     fp.write("       output(screen,\"\\nPaths:\\n\");\n")
@@ -108,7 +128,6 @@ def write_build_options_header(fp):
     fp.write("       output(screen,\"   PIDDIR: %s\\n\", get_dyn_PIDDIR());\n")
     fp.write("       output(screen,\"   SMB_PASSWD_FILE: %s\\n\",get_dyn_SMB_PASSWD_FILE());\n")
     fp.write("       output(screen,\"   PRIVATE_DIR: %s\\n\",get_dyn_PRIVATE_DIR());\n")
-    fp.write("       output(screen,\"   BINDDNS_DIR: %s\\n\",get_dyn_BINDDNS_DIR());\n")
     fp.write("\n")
 
 def write_build_options_footer(fp):
@@ -165,9 +184,6 @@ def write_build_options(task):
                 keys_header_other.append(key)
             else:
                 keys_option_have.append(key)
-        elif key.startswith("static_init_"):
-            l = key.split("(")
-            keys_misc.append(l[0])
         else:
             keys_misc.append(key)
 

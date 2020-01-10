@@ -184,8 +184,7 @@ enum agent_return external_agent_operation(struct agent *agent,
 	string = malloc(len);
 
 	string[0] = op;
-	strncpy(string+1, name, len - 1);
-	string[len-1] = '\0';
+	strcpy(string+1, name);
 
 	if (write(agent->cmdfd, string, len) != len
 	    || read(agent->responsefd, &res, sizeof(res)) != sizeof(res))

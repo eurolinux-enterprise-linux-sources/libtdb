@@ -26,4 +26,4 @@ void foo(const char *format, ...)
 	printf("1");
 	exit(0);
 }
-int main(void) { foo("hello"); }
+main() { foo("hello"); }

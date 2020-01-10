@@ -475,26 +475,6 @@ char *rep_strcasestr(const char *haystack, const char *needle)
 }
 #endif
 
-#ifndef HAVE_STRSEP
-char *rep_strsep(char **pps, const char *delim)
-{
-	char *ret = *pps;
-	char *p = *pps;
-
-	if (p == NULL) {
-		return NULL;
-	}
-	p += strcspn(p, delim);
-	if (*p == '\0') {
-		*pps = NULL;
-	} else {
-		*p = '\0';
-		*pps = p + 1;
-	}
-	return ret;
-}
-#endif
-
 #ifndef HAVE_STRTOK_R
 /* based on GLIBC version, copyright Free Software Foundation */
 char *rep_strtok_r(char *s, const char *delim, char **save_ptr)
@@ -538,23 +518,25 @@ long long int rep_strtoll(const char *str, char **endptr, int base)
 }
 #else
 #ifdef HAVE_BSD_STRTOLL
-#undef strtoll
+#ifdef HAVE_STRTOQ
 long long int rep_strtoll(const char *str, char **endptr, int base)
 {
-	int saved_errno = errno;
-	long long int nb = strtoll(str, endptr, base);
-	/* With glibc EINVAL is only returned if base is not ok */
+	long long int nb = strtoq(str, endptr, base);
+	/* In linux EINVAL is only returned if base is not ok */
 	if (errno == EINVAL) {
 		if (base == 0 || (base >1 && base <37)) {
 			/* Base was ok so it's because we were not
 			 * able to make the convertion.
 			 * Let's reset errno.
 			 */
-			errno = saved_errno;
+			errno = 0;
 		}
 	}
 	return nb;
 }
+#else
+#error "You need the strtoq function"
+#endif /* HAVE_STRTOQ */
 #endif /* HAVE_BSD_STRTOLL */
 #endif /* HAVE_STRTOLL */
 
@@ -574,23 +556,25 @@ unsigned long long int rep_strtoull(const char *str, char **endptr, int base)
 }
 #else
 #ifdef HAVE_BSD_STRTOLL
-#undef strtoull
+#ifdef HAVE_STRTOUQ
 unsigned long long int rep_strtoull(const char *str, char **endptr, int base)
 {
-	int saved_errno = errno;
-	unsigned long long int nb = strtoull(str, endptr, base);
-	/* With glibc EINVAL is only returned if base is not ok */
+	unsigned long long int nb = strtouq(str, endptr, base);
+	/* In linux EINVAL is only returned if base is not ok */
 	if (errno == EINVAL) {
 		if (base == 0 || (base >1 && base <37)) {
 			/* Base was ok so it's because we were not
 			 * able to make the convertion.
 			 * Let's reset errno.
 			 */
-			errno = saved_errno;
+			errno = 0;
 		}
 	}
 	return nb;
 }
+#else
+#error "You need the strtouq function"
+#endif /* HAVE_STRTOUQ */
 #endif /* HAVE_BSD_STRTOLL */
 #endif /* HAVE_STRTOULL */
 
@@ -820,24 +804,6 @@ int rep_strerror_r(int errnum, char *buf, size_t buflen)
 	strncpy(buf, s, buflen);
 	return 0;
 }
-#elif (!defined(STRERROR_R_XSI_NOT_GNU))
-#undef strerror_r
-int rep_strerror_r(int errnum, char *buf, size_t buflen)
-{
-	char *s = strerror_r(errnum, buf, buflen);
-	if (s == NULL) {
-		/* Shouldn't happen, should always get a string */
-		return EINVAL;
-	}
-	if (s != buf) {
-		strlcpy(buf, s, buflen);
-		if (strlen(s) > buflen - 1) {
-			return ERANGE;
-		}
-	}
-	return 0;
-
-}
 #endif
 
 #ifndef HAVE_CLOCK_GETTIME
@@ -846,7 +812,7 @@ int rep_clock_gettime(clockid_t clk_id, struct timespec *tp)
 	struct timeval tval;
 	switch (clk_id) {
 		case 0: /* CLOCK_REALTIME :*/
-#if defined(HAVE_GETTIMEOFDAY_TZ) || defined(HAVE_GETTIMEOFDAY_TZ_VOID)
+#ifdef HAVE_GETTIMEOFDAY_TZ
 			gettimeofday(&tval,NULL);
 #else
 			gettimeofday(&tval);
@@ -939,11 +905,6 @@ int rep_usleep(useconds_t sec)
 
 #ifndef HAVE_SETPROCTITLE
 void rep_setproctitle(const char *fmt, ...)
-{
-}
-#endif
-#ifndef HAVE_SETPROCTITLE_INIT
-void rep_setproctitle_init(int argc, char *argv[], char *envp[])
 {
 }
 #endif

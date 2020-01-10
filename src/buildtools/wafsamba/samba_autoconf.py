@@ -1,10 +1,10 @@
 # a waf tool to add autoconf-like macros to the configure section
 
-import os, sys
-import Build, Options, preproc, Logs
+import Build, os, sys, Options, preproc, Logs
+import string
 from Configure import conf
-from TaskGen import feature
-from samba_utils import TO_LIST, GET_TARGET_TYPE, SET_TARGET_TYPE, unique_list, mkdir_p
+from samba_utils import *
+import samba_cross
 
 missing_headers = set()
 
@@ -13,6 +13,7 @@ missing_headers = set()
 # to waf a bit easier for those used to autoconf
 # m4 files
 
+@runonce
 @conf
 def DEFINE(conf, d, v, add_to_cflags=False, quote=False):
     '''define a config option'''
@@ -100,7 +101,6 @@ def CHECK_HEADER(conf, h, add_headers=False, lib=None):
                      type='nolink',
                      execute=0,
                      ccflags=ccflags,
-                     mandatory=False,
                      includes=cpppath,
                      uselib=lib.upper(),
                      msg="Checking for header %s" % h)
@@ -365,7 +365,7 @@ def CHECK_CODE(conf, code, define,
                headers=None, msg=None, cflags='', includes='# .',
                local_include=True, lib=None, link=True,
                define_ret=False, quote=False,
-               on_target=True, strict=False):
+               on_target=True):
     '''check if some code compiles and/or runs'''
 
     if CONFIG_SET(conf, define):
@@ -394,16 +394,6 @@ def CHECK_CODE(conf, code, define,
         msg="Checking for %s" % define
 
     cflags = TO_LIST(cflags)
-
-    # Be strict when relying on a compiler check
-    # Some compilers (e.g. xlc) ignore non-supported features as warnings
-    if strict:
-        extra_cflags = None
-        if conf.env["CC_NAME"] == "gcc":
-            extra_cflags = "-Werror"
-        elif conf.env["CC_NAME"] == "xlc":
-            extra_cflags = "-qhalt=w"
-        cflags.append(extra_cflags)
 
     if local_include:
         cflags.append('-I%s' % conf.curdir)
@@ -464,8 +454,7 @@ def CHECK_CODE(conf, code, define,
 
 @conf
 def CHECK_STRUCTURE_MEMBER(conf, structname, member,
-                           always=False, define=None, headers=None,
-                           lib=None):
+                           always=False, define=None, headers=None):
     '''check for a structure member'''
     if define is None:
         define = 'HAVE_%s' % member.upper()
@@ -474,7 +463,6 @@ def CHECK_STRUCTURE_MEMBER(conf, structname, member,
                       define,
                       execute=False,
                       link=False,
-                      lib=lib,
                       always=always,
                       headers=headers,
                       local_include=False,
@@ -485,13 +473,10 @@ def CHECK_STRUCTURE_MEMBER(conf, structname, member,
 def CHECK_CFLAGS(conf, cflags, fragment='int main(void) { return 0; }\n'):
     '''check if the given cflags are accepted by the compiler
     '''
-    check_cflags = TO_LIST(cflags)
-    if 'WERROR_CFLAGS' in conf.env:
-        check_cflags.extend(conf.env['WERROR_CFLAGS'])
     return conf.check(fragment=fragment,
                       execute=0,
                       type='nolink',
-                      ccflags=check_cflags,
+                      ccflags=cflags,
                       msg="Checking compiler accepts %s" % cflags)
 
 @conf
@@ -501,7 +486,6 @@ def CHECK_LDFLAGS(conf, ldflags):
     return conf.check(fragment='int main(void) { return 0; }\n',
                       execute=0,
                       ldflags=ldflags,
-                      mandatory=False,
                       msg="Checking linker accepts %s" % ldflags)
 
 
@@ -585,9 +569,9 @@ int foo()
 
         (ccflags, ldflags, cpppath) = library_flags(conf, lib)
         if shlib:
-            res = conf.check(features='c cshlib', fragment=fragment, lib=lib, uselib_store=lib, ccflags=ccflags, ldflags=ldflags, uselib=lib.upper(), mandatory=False)
+            res = conf.check(features='cc cshlib', fragment=fragment, lib=lib, uselib_store=lib, ccflags=ccflags, ldflags=ldflags, uselib=lib.upper())
         else:
-            res = conf.check(lib=lib, uselib_store=lib, ccflags=ccflags, ldflags=ldflags, uselib=lib.upper(), mandatory=False)
+            res = conf.check(lib=lib, uselib_store=lib, ccflags=ccflags, ldflags=ldflags, uselib=lib.upper())
 
         if not res:
             if mandatory:
@@ -673,24 +657,9 @@ def SAMBA_CONFIG_H(conf, path=None):
     if not IN_LAUNCH_DIR(conf):
         return
 
-    # we need to build real code that can't be optimized away to test
-    if conf.check(fragment='''
-        #include <stdio.h>
-
-        int main(void)
-        {
-            char t[100000];
-            while (fgets(t, sizeof(t), stdin));
-            return 0;
-        }
-        ''',
-        execute=0,
-        ccflags='-fstack-protector',
-        ldflags='-fstack-protector',
-        mandatory=False,
-        msg='Checking if toolchain accepts -fstack-protector'):
-            conf.ADD_CFLAGS('-fstack-protector')
-            conf.ADD_LDFLAGS('-fstack-protector')
+    if conf.CHECK_CFLAGS(['-fstack-protector']) and conf.CHECK_LDFLAGS(['-fstack-protector']):
+        conf.ADD_CFLAGS('-fstack-protector')
+        conf.ADD_LDFLAGS('-fstack-protector')
 
     if Options.options.debug:
         conf.ADD_CFLAGS('-g', testflags=True)
@@ -721,15 +690,8 @@ def SAMBA_CONFIG_H(conf, path=None):
                         testflags=True)
         conf.ADD_CFLAGS('-Werror=uninitialized -Wuninitialized',
                         testflags=True)
-        conf.ADD_CFLAGS('-Wimplicit-fallthrough',
-                        testflags=True)
-        conf.ADD_CFLAGS('-Werror=strict-overflow -Wstrict-overflow=2',
-                        testflags=True)
 
         conf.ADD_CFLAGS('-Wformat=2 -Wno-format-y2k', testflags=True)
-        conf.ADD_CFLAGS('-Wno-format-zero-length', testflags=True)
-        conf.ADD_CFLAGS('-Werror=format-security -Wformat-security',
-                        testflags=True, prereq_flags='-Wformat')
         # This check is because for ldb_search(), a NULL format string
         # is not an error, but some compilers complain about that.
         if CHECK_CFLAGS(conf, ["-Werror=format", "-Wformat=2"], '''
@@ -747,7 +709,6 @@ int main(void) {
 
     if Options.options.picky_developer:
         conf.ADD_NAMED_CFLAGS('PICKY_CFLAGS', '-Werror -Wno-error=deprecated-declarations', testflags=True)
-        conf.ADD_NAMED_CFLAGS('PICKY_CFLAGS', '-Wno-error=tautological-compare', testflags=True)
 
     if Options.options.fatal_errors:
         conf.ADD_CFLAGS('-Wfatal-errors', testflags=True)
@@ -790,15 +751,14 @@ def CONFIG_PATH(conf, name, default):
             conf.env[name] = conf.env['PREFIX'] + default
 
 @conf
-def ADD_NAMED_CFLAGS(conf, name, flags, testflags=False, prereq_flags=[]):
+def ADD_NAMED_CFLAGS(conf, name, flags, testflags=False):
     '''add some CFLAGS to the command line
        optionally set testflags to ensure all the flags work
     '''
-    prereq_flags = TO_LIST(prereq_flags)
     if testflags:
         ok_flags=[]
         for f in flags.split():
-            if CHECK_CFLAGS(conf, [f] + prereq_flags):
+            if CHECK_CFLAGS(conf, f):
                 ok_flags.append(f)
         flags = ok_flags
     if not name in conf.env:
@@ -806,12 +766,11 @@ def ADD_NAMED_CFLAGS(conf, name, flags, testflags=False, prereq_flags=[]):
     conf.env[name].extend(TO_LIST(flags))
 
 @conf
-def ADD_CFLAGS(conf, flags, testflags=False, prereq_flags=[]):
+def ADD_CFLAGS(conf, flags, testflags=False):
     '''add some CFLAGS to the command line
        optionally set testflags to ensure all the flags work
     '''
-    ADD_NAMED_CFLAGS(conf, 'EXTRA_CFLAGS', flags, testflags=testflags,
-                     prereq_flags=prereq_flags)
+    ADD_NAMED_CFLAGS(conf, 'EXTRA_CFLAGS', flags, testflags=testflags)
 
 @conf
 def ADD_LDFLAGS(conf, flags, testflags=False):

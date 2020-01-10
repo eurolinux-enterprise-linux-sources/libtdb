@@ -10,11 +10,12 @@
 
 "Execute the tasks"
 
-import sys, random, threading
+import sys, random, time, threading, traceback, os
 try: from Queue import Queue
 except ImportError: from queue import Queue
-import Utils, Options
-from Constants import EXCEPTION, CRASHED, MAXJOBS, ASK_LATER, SKIPPED, SKIP_ME, SUCCESS
+import Build, Utils, Logs, Options
+from Logs import debug, error
+from Constants import *
 
 GAP = 15
 
@@ -43,7 +44,7 @@ def process(tsk):
         if tsk.__class__.stat: ret = tsk.__class__.stat(tsk)
         # actual call to task's run() function
         else: ret = tsk.call_run()
-    except Exception as e:
+    except Exception, e:
         tsk.err_msg = Utils.ex_stack()
         tsk.hasrun = EXCEPTION
 
@@ -177,7 +178,7 @@ class Parallel(object):
 
             try:
                 st = tsk.runnable_status()
-            except Exception as e:
+            except Exception, e:
                 self.processed += 1
                 if self.stop and not Options.options.keep:
                     tsk.hasrun = SKIPPED

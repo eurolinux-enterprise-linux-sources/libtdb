@@ -2,9 +2,9 @@
 
 # this is a base set of waf rules that everything else pulls in first
 
-import os, sys
-import wafsamba, Configure, Logs, Options, Utils
-from samba_utils import os_path_relpath
+import sys, wafsamba, Configure, Logs
+import Options, os, preproc
+from samba_utils import *
 from optparse import SUPPRESS_HELP
 
 # this forces configure to be re-run if any of the configure
@@ -78,6 +78,9 @@ def set_options(opt):
                    help='additional directory to search for libiconv',
                    action='store', dest='iconv_open', default='/usr/local',
                    match = ['Checking for library iconv', 'Checking for iconv_open', 'Checking for header iconv.h'])
+    opt.add_option('--with-gettext',
+                   help='additional directory to search for gettext',
+                   action='store', dest='gettext_location', default='None')
     opt.add_option('--without-gettext',
                    help=("Disable use of gettext"),
                    action="store_true", dest='disable_gettext', default=False)
@@ -96,13 +99,9 @@ def set_options(opt):
     gr.add_option('--enable-developer',
                    help=("Turn on developer warnings and debugging"),
                    action="store_true", dest='developer', default=False)
-    def picky_developer_callback(option, opt_str, value, parser):
-        parser.values.developer = True
-        parser.values.picky_developer = True
     gr.add_option('--picky-developer',
                    help=("Treat all warnings as errors (enable -Werror)"),
-                   action="callback", callback=picky_developer_callback,
-                   dest='picky_developer', default=False)
+                   action="store_true", dest='picky_developer', default=False)
     gr.add_option('--fatal-errors',
                    help=("Stop compilation on first error (enable -Wfatal-errors)"),
                    action="store_true", dest='fatal_errors', default=False)
@@ -196,10 +195,6 @@ def set_options(opt):
                    help='tag release in git at the same time',
                    type='string', action='store', dest='TAG_RELEASE')
 
-    opt.add_option('--disable-python',
-                    help='do not generate python modules',
-                    action='store_true', dest='disable_python', default=False)
-
     opt.add_option('--extra-python', type=str,
                     help=("build selected libraries for the specified "
                           "additional version of Python "
@@ -207,12 +202,10 @@ def set_options(opt):
                     metavar="PYTHON", dest='EXTRA_PYTHON', default=None)
 
 
-@Utils.run_once
+@wafsamba.runonce
 def configure(conf):
     conf.env.hlist = []
     conf.env.srcdir = conf.srcdir
-
-    conf.define('SRCDIR', conf.env['srcdir'])
 
     if Options.options.timestamp_dependencies:
         conf.ENABLE_TIMESTAMP_DEPENDENCIES()
@@ -222,7 +215,6 @@ def configure(conf):
     # load our local waf extensions
     conf.check_tool('gnu_dirs')
     conf.check_tool('wafsamba')
-    conf.check_tool('print_commands')
 
     conf.CHECK_CC_ENV()
 
@@ -235,11 +227,6 @@ def configure(conf):
 
     # older gcc versions (< 4.4) does not work with gccdeps, so we have to see if the .d file is generated
     if Options.options.enable_gccdeps:
-        # stale file removal - the configuration may pick up the old .pyc file
-        p = os.path.join(conf.srcdir, 'buildtools/wafsamba/gccdeps.pyc')
-        if os.path.exists(p):
-            os.remove(p)
-
         from TaskGen import feature, after
         @feature('testd')
         @after('apply_core')
@@ -254,7 +241,7 @@ def configure(conf):
         cc.run = Task.compile_fun_noshell('cc', '${CC} ${CCFLAGS} ${CPPFLAGS} ${_CCINCFLAGS} ${_CCDEFFLAGS} ${CC_SRC_F}${SRC} ${CC_TGT_F}${TGT[0].abspath(env)}')[0]
         try:
             try:
-                conf.check(features='c testd', fragment='int main() {return 0;}\n', ccflags=['-MD'], mandatory=True, msg='Check for -MD')
+                conf.check(features='cc testd', fragment='int main() {return 0;}\n', ccflags=['-MD'], mandatory=True, msg='Check for -MD')
             except:
                 pass
             else:
@@ -269,7 +256,6 @@ def configure(conf):
     conf.env.MODULESDIR = Options.options.MODULESDIR
     conf.env.PRIVATELIBDIR = Options.options.PRIVATELIBDIR
     conf.env.BUNDLED_LIBS = Options.options.BUNDLED_LIBS.split(',')
-    conf.env.SYSTEM_LIBS = ()
     conf.env.PRIVATE_LIBS = Options.options.PRIVATE_LIBS.split(',')
     conf.env.BUILTIN_LIBRARIES = Options.options.BUILTIN_LIBRARIES.split(',')
     conf.env.NONSHARED_BINARIES = Options.options.NONSHARED_BINARIES.split(',')
@@ -286,13 +272,7 @@ def configure(conf):
     conf.env.AUTOCONF_HOST  = Options.options.AUTOCONF_HOST
     conf.env.AUTOCONF_PROGRAM_PREFIX = Options.options.AUTOCONF_PROGRAM_PREFIX
 
-    conf.env.disable_python = Options.options.disable_python
-
     conf.env.EXTRA_PYTHON = Options.options.EXTRA_PYTHON
-
-    if (conf.env.disable_python and conf.env.EXTRA_PYTHON):
-        Logs.error('ERROR: cannot specify both --disable-python and --extra-python.')
-        sys.exit(1)
 
     if (conf.env.AUTOCONF_HOST and
         conf.env.AUTOCONF_BUILD and
@@ -314,6 +294,10 @@ def configure(conf):
 
     conf.env.GIT_LOCAL_CHANGES = Options.options.GIT_LOCAL_CHANGES
 
+    conf.CHECK_COMMAND(['uname', '-a'],
+                       msg='Checking build system',
+                       define='BUILD_SYSTEM',
+                       on_target=False)
     conf.CHECK_UNAME()
 
     # see if we can compile and run a simple C program
@@ -375,61 +359,7 @@ def configure(conf):
         conf.CHECK_CODE('''int main(void) { return 0; }
                            __attribute__((visibility("default"))) void vis_foo2(void) {}''',
                         cflags=conf.env.VISIBILITY_CFLAGS,
-                        strict=True,
                         define='HAVE_VISIBILITY_ATTR', addmain=False)
-
-    # check HAVE_CONSTRUCTOR_ATTRIBUTE
-    conf.CHECK_CODE('''
-            void test_constructor_attribute(void) __attribute__ ((constructor));
-
-            void test_constructor_attribute(void)
-            {
-                return;
-            }
-
-            int main(void) {
-                return 0;
-            }
-            ''',
-            'HAVE_CONSTRUCTOR_ATTRIBUTE',
-            addmain=False,
-            strict=True,
-            msg='Checking for library constructor support')
-
-        # check HAVE_DESTRUCTOR_ATTRIBUTE
-    conf.CHECK_CODE('''
-            void test_destructor_attribute(void) __attribute__ ((destructor));
-
-            void test_destructor_attribute(void)
-            {
-                return;
-            }
-
-            int main(void) {
-                return 0;
-            }
-            ''',
-            'HAVE_DESTRUCTOR_ATTRIBUTE',
-            addmain=False,
-            strict=True,
-            msg='Checking for library destructor support')
-
-    conf.CHECK_CODE('''
-            void test_attribute(void) __attribute__ (());
-
-            void test_attribute(void)
-            {
-                return;
-            }
-
-            int main(void) {
-                return 0;
-            }
-            ''',
-            'HAVE___ATTRIBUTE__',
-            addmain=False,
-            strict=True,
-            msg='Checking for __attribute__')
 
     if sys.platform.startswith('aix'):
         conf.DEFINE('_ALL_SOURCE', 1, add_to_cflags=True)
@@ -503,12 +433,12 @@ struct foo bar = { .y = 'X', .x = 1 };
     if not conf.CHECK_LARGEFILE():
         raise Utils.WafError('Samba requires large file support support, but not available on this platform: sizeof(off_t) < 8')
 
-    if conf.env.HAVE_STDDEF_H and conf.env.HAVE_STDLIB_H:
+    if 'HAVE_STDDEF_H' in conf.env and 'HAVE_STDLIB_H' in conf.env:
         conf.DEFINE('STDC_HEADERS', 1)
 
     conf.CHECK_HEADERS('sys/time.h time.h', together=True)
 
-    if conf.env.HAVE_SYS_TIME_H and conf.env.HAVE_TIME_H:
+    if 'HAVE_SYS_TIME_H' in conf.env and 'HAVE_TIME_H' in conf.env:
         conf.DEFINE('TIME_WITH_SYS_TIME', 1)
 
     # cope with different extensions for libraries
